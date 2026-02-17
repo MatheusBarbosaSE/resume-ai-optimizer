@@ -19,23 +19,22 @@ public class PdfService {
      *
      * @param file The PDF file uploaded by the user.
      * @return The extracted text content as a String.
+     * @throws IllegalArgumentException if the file is empty or not a PDF.
      * @throws RuntimeException if the file cannot be processed.
      */
-    public static String extractTextFromPdf(MultipartFile file) {
+    public String extractTextFromPdf(MultipartFile file) {
         if (file.isEmpty()) {
             throw new IllegalArgumentException("The uploaded file is empty.");
         }
 
-        try {
-            // Load the PDF document from the file bytes
-            try (PDDocument document = Loader.loadPDF(file.getBytes())) {
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.equals("application/pdf")) {
+            throw new IllegalArgumentException("Invalid file format. Only PDF files are supported.");
+        }
 
-                // Create a text stripper to extract content
-                PDFTextStripper stripper = new PDFTextStripper();
-
-                // Return the text extracted from the document
-                return stripper.getText(document);
-            }
+        try (PDDocument document = Loader.loadPDF(file.getBytes())) {
+            PDFTextStripper stripper = new PDFTextStripper();
+            return stripper.getText(document);
         } catch (IOException e) {
             throw new RuntimeException("Error reading PDF file: " + e.getMessage(), e);
         }
