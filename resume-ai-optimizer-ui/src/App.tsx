@@ -9,23 +9,43 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 
+// Our new API Service
+import { optimizeResume, type ResumeResponse } from "@/services/api";
+
 export default function App() {
-  // State variables for our form
+  // Input states
   const [file, setFile] = useState<File | null>(null);
   const [jobDescription, setJobDescription] = useState("");
   
-  // State to simulate loading and results
+  // UI states
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [showMockResult, setShowMockResult] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // API Result state
+  const [result, setResult] = useState<ResumeResponse | null>(null);
 
-  // Function to simulate sending data to the Java Backend
-  const handleAnalyzeClick = () => {
+  const handleAnalyzeClick = async () => {
+    if (!file || !jobDescription) {
+      setError("Please provide both a PDF file and a job description.");
+      return;
+    }
+
     setIsAnalyzing(true);
-    // Simulate a 2-second API call
-    setTimeout(() => {
+    setError(null);
+    setResult(null);
+
+    try {
+      // Call our Spring Boot API
+      const apiResponse = await optimizeResume(file, jobDescription);
+      setResult(apiResponse);
+    } catch (err: any) {
+      console.error("API Error:", err);
+      // Fallback error message if the backend is down or fails
+      const backendMessage = err.response?.data?.error || err.message;
+      setError(`Analysis failed: ${backendMessage}. Is the Java backend running?`);
+    } finally {
       setIsAnalyzing(false);
-      setShowMockResult(true);
-    }, 2000);
+    }
   };
 
   return (
@@ -58,7 +78,7 @@ export default function App() {
             
             {/* File Upload */}
             <div className="space-y-2">
-              <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+              <label className="text-sm font-medium leading-none">
                 1. Upload Resume (PDF)
               </label>
               <Input 
@@ -71,7 +91,7 @@ export default function App() {
 
             {/* Job Description Textarea */}
             <div className="space-y-2">
-              <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+              <label className="text-sm font-medium leading-none">
                 2. Job Description
               </label>
               <Textarea 
@@ -82,12 +102,19 @@ export default function App() {
               />
             </div>
 
+            {/* Error Message Display */}
+            {error && (
+              <div className="p-3 text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-md">
+                {error}
+              </div>
+            )}
+
             {/* Submit Button */}
             <Button 
               className="w-full bg-blue-600 hover:bg-blue-700 text-white transition-colors" 
               size="lg"
               onClick={handleAnalyzeClick}
-              disabled={isAnalyzing || !jobDescription} // Disable if empty or loading
+              disabled={isAnalyzing || !jobDescription || !file} // Button disabled validation
             >
               {isAnalyzing ? "Analyzing with AI..." : "Analyze Resume"}
             </Button>
@@ -96,7 +123,7 @@ export default function App() {
 
         {/* RIGHT COLUMN: Results Display */}
         <div className="space-y-6">
-          {!showMockResult && !isAnalyzing && (
+          {!result && !isAnalyzing && (
              <Card className="h-full flex flex-col items-center justify-center text-center p-10 bg-zinc-100/50 border-dashed shadow-none">
                <FileText className="w-16 h-16 text-zinc-300 mb-4" />
                <p className="text-zinc-500 font-medium">Your AI analysis results will appear here.</p>
@@ -107,15 +134,16 @@ export default function App() {
             <Card className="h-full flex flex-col items-center justify-center p-10 shadow-sm border-blue-100 bg-blue-50/50">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
               <p className="text-blue-600 font-medium animate-pulse">Running advanced AI analysis...</p>
+              <p className="text-xs text-blue-400 mt-2">This may take a minute depending on your local LLM speed.</p>
             </Card>
           )}
 
-          {/* MOCK RESULTS CARD (Simulating the Java API response) */}
-          {showMockResult && (
+          {/* REAL RESULTS CARD (Populated from API) */}
+          {result && !isAnalyzing && (
             <Card className="shadow-sm border-zinc-200 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <CardHeader className="pb-4 border-b border-zinc-100">
                 <CardTitle className="text-xl">Analysis Results</CardTitle>
-                <CardDescription>Target Company: <span className="font-semibold text-zinc-900">Tech Corp (Mocked)</span></CardDescription>
+                <CardDescription>Target Company: <span className="font-semibold text-zinc-900">{result.targetJobCompanyName}</span></CardDescription>
               </CardHeader>
               <CardContent className="pt-6 space-y-8">
                 
@@ -126,9 +154,9 @@ export default function App() {
                       <CheckCircle className="w-5 h-5 text-emerald-500" />
                       Match Percentage
                     </span>
-                    <span className="text-3xl font-bold text-emerald-600">75%</span>
+                    <span className="text-3xl font-bold text-emerald-600">{result.matchPercentage}%</span>
                   </div>
-                  <Progress value={75} className="h-3 bg-zinc-100" />
+                  <Progress value={result.matchPercentage} className="h-3 bg-zinc-100" />
                 </div>
 
                 {/* Missing Keywords */}
@@ -138,18 +166,23 @@ export default function App() {
                     Missing Keywords
                   </span>
                   <div className="flex flex-wrap gap-2">
-                    {/* Mocked missing keywords */}
-                    <Badge variant="destructive" className="bg-rose-100 text-rose-700 hover:bg-rose-200 border-none shadow-none">AWS Certified Cloud Practitioner</Badge>
-                    <Badge variant="destructive" className="bg-rose-100 text-rose-700 hover:bg-rose-200 border-none shadow-none">Docker</Badge>
-                    <Badge variant="destructive" className="bg-rose-100 text-rose-700 hover:bg-rose-200 border-none shadow-none">JUnit/Mockito</Badge>
+                    {result.missingKeywords.length > 0 ? (
+                      result.missingKeywords.map((keyword, index) => (
+                        <Badge key={index} variant="destructive" className="bg-rose-100 text-rose-700 hover:bg-rose-200 border-none shadow-none">
+                          {keyword}
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className="text-sm text-emerald-600">No missing keywords found! Great job!</span>
+                    )}
                   </div>
                 </div>
 
                 {/* Improvement Tips */}
                 <div className="space-y-2 p-4 bg-blue-50 rounded-lg border border-blue-100">
                   <span className="font-semibold text-blue-900 block mb-1">AI Improvement Tips</span>
-                  <p className="text-sm text-blue-800 leading-relaxed">
-                    Highlight your expertise in testing by explicitly mentioning JUnit and Mockito in your recent Java projects. Also, emphasize any Cloud Computing studies or certifications to align better with the AWS requirements of this role.
+                  <p className="text-sm text-blue-800 leading-relaxed whitespace-pre-wrap">
+                    {result.improvementTips}
                   </p>
                 </div>
 
