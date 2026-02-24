@@ -30,6 +30,12 @@ export default function App() {
       return;
     }
 
+    const MAX_FILE_SIZE_MB = 5;
+    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+      setError(`The PDF file is too large. Please upload a file smaller than ${MAX_FILE_SIZE_MB}MB.`);
+      return;
+    }
+
     setIsAnalyzing(true);
     setError(null);
     setResult(null);
